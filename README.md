@@ -51,7 +51,7 @@ func AlbumWithId(id int64) (*Album, error) {
 ```
 
 ## Using ScanRow() / ScanRows()
-ScanRow and ScanRows applies invokes the underlying sql.DB's Scan function. See
+ScanRow and ScanRows invokes the underlying sql.DB's Scan function. See
 those docs for more info.
 ### ScanRow()
 ```go
@@ -70,7 +70,7 @@ func AlbumWithId(id int64) (*Album, error) {
     },
   )
 
-    // of course handle the error but this is a snippet  
+  // of course handle the error but this is a snippet  
   return album, nil    
 }
 ```
@@ -91,7 +91,7 @@ func AllAlbums() ([]*Album, error) {
     },
   )
   
-    // of course handle the error but this is a snippet
+  // of course handle the error but this is a snippet
   return albums, nil
 }  
 ```
