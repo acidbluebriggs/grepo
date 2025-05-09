@@ -2,6 +2,7 @@ package grepo
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	_ "github.com/lib/pq"
 	"log"
@@ -17,33 +18,67 @@ type Album struct {
 	Title    string
 }
 
-var albums Repository[Album]
+var (
+	albums Repository[Album]
+)
+
+func openTempDb(path string) (*sql.DB, error) {
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to locate database file %s: %w", path, err)
+		}
+		return nil, err
+	}
+
+	// Create a temporary file
+	tmpFile, err := os.CreateTemp("", "temp-sqlite-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	_ = tmpFile.Close()
+
+	// Copy the original database file to the temporary file
+	input, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read source database: %w", err)
+	}
+
+	if err := os.WriteFile(tmpFile.Name(), input, 0600); err != nil {
+		return nil, fmt.Errorf("failed to write temp database: %w", err)
+	}
+
+	// Open the temporary database
+	db, err := sql.Open("sqlite3", tmpFile.Name())
+	if err != nil {
+		return nil, fmt.Errorf("failed to open temp database: %w", err)
+	}
+
+	runtime.SetFinalizer(db, func(db *sql.DB) {
+		_ = db.Close()
+		_ = os.Remove(tmpFile.Name())
+	})
+
+	return db, nil
+}
 
 func setup() {
-	_, filename, _, _ := runtime.Caller(0)
-	testDataDir := filepath.Join(filepath.Dir(filename), "test_files", "chinook.sqlite")
-	conn, err := NewSQLiteConnector(testDataDir)
-
-	db, err := conn.GetConnection()
-
+	_, name, _, _ := runtime.Caller(0)
+	testDatabase := filepath.Join(filepath.Dir(name), "test_files", "chinook.sqlite")
+	database, err := openTempDb(testDatabase)
 	if err != nil {
 		log.Fatal("Cannot create connection", err)
 	}
-
-	albums = NewRepository[Album](db)
+	albums = NewRepository[Album](database)
 }
 
 func TestMain(m *testing.M) {
 	setup()
 	code := m.Run()
-
-	// TODO currently the connector itself will
-	// remove the temp file... we need to change this.
-	//teardown()
-
-	// Exit with the test status code
 	os.Exit(code)
 }
+
 func TestMapRows(t *testing.T) {
 	results, err := albums.MapRows(
 		context.Background(),
@@ -59,6 +94,7 @@ func TestMapRows(t *testing.T) {
 
 	if err != nil {
 		t.Error(fmt.Errorf("error retrieving rows %w", err))
+		return
 	}
 
 	if len(results) == 0 {
@@ -150,5 +186,4 @@ func TestScanRows(t *testing.T) {
 	if len(album) != 10 {
 		t.Errorf("want 10 albums got %d", len(album))
 	}
-
 }
