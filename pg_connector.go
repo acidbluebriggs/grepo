@@ -9,6 +9,20 @@ import (
 	"time"
 )
 
+// Database is a struct which defines the configuration for connecting to a database.
+// It's not very useful, as something like SQLite has a completely different
+// way of creating its urls. There is no user/password/port. It's probably
+// better off simply having a map of key/value and let a factory deal with it. Leaving here
+// for Postgres
+type Database struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Provider string `json:"provider"`
+	Db       string `json:"db"`
+}
+
 type PostgresConnector struct {
 	database Database
 	db       *sql.DB

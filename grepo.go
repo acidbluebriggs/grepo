@@ -5,22 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"log/slog"
 )
-
-// Database is a struct which defines the configuration for connecting to a database.
-// It's not very useful, as something like SQLite has a completely different
-// way of creating its urls. There is no user/password/port. It's probably
-// better off simply having a map of key/value and let a factory deal with it.
-type Database struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	Provider string `json:"provider"`
-	Db       string `json:"db"`
-}
 
 // Scanner defines an interface for scanning database rows into variables.
 // This interface is typically implemented by database/sql.Row and database/sql.Rows.
@@ -53,7 +39,7 @@ type Repository[T any] interface {
 	// MapRows executes a query and maps multiple rows into type T using the provided map function.
 	MapRows(ctx context.Context, sql string, args []any, mapFunc MapFunc[T]) ([]*T, error)
 
-	Execute(ctx context.Context, sql string, args []any) (int64, error)
+	Execute(ctx context.Context, sql string, args []any) (Result, error)
 }
 
 func NewRepository[T any](db *sql.DB) Repository[T] {
@@ -250,102 +236,161 @@ func (repo repository[T]) ScanRows(
 	return results, nil
 }
 
+// Execute performs the given query with args and returns a Result
 func (repo repository[T]) Execute(
 	ctx context.Context,
 	sql string,
-	args []any) (int64, error) {
+	args []any) (Result, error) {
 
 	tx, err := repo.database.BeginTx(ctx, nil)
 
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("unable to begin a transaction Execute() %w", "grepo", err)
+		return Result{}, fmt.Errorf("function Execute() errored on Exec %w", err)
+
 	}
 
-	_, execErr := tx.Exec(sql, args...)
-
-	if execErr != nil {
+	result, err := tx.Exec(sql, args...)
+	if err != nil {
 		_ = tx.Rollback()
-		slog.Error("error executing stmt in Execute() %w", "grepo", err)
+		slog.Error("func Execute() errored on Exec", "grepo", err)
+		return Result{}, fmt.Errorf("func Execute() errored on Exec: %w", err)
 	}
 
-	result, err := tx.Exec(sql, args)
-
-	if err := tx.Commit(); err != nil {
-		slog.Error("error executing commit in Execute() %w", "grepo", err)
-	}
+	err = tx.Commit()
 
 	if err != nil {
-		return 0, err
+		slog.Error("error executing commit in Execute()", "grepo", err)
+		return Result{}, fmt.Errorf("func Execute() failed during Commit: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
+	var lastInsertId int64
+	var rowsAffected int64
+
+	rowsAffected, rerr := result.RowsAffected()
+
+	// There is some wonky attempts at capturing some errors here, just in case
+	// one of the two result calls causes an error. We may not want to fail
+	// completely. TODO need error types.
+	if rerr != nil {
+		slog.Error("error extracting rows affected from result", "grepo", err)
+		rowsAffected = -1
+	}
+
+	lastInsertId, err = result.LastInsertId()
 
 	if err != nil {
-		return 0, err
+		slog.Error("error extracting last insert id from result", "grepo", err)
+		lastInsertId = -1
+		rerr = fmt.Errorf("%w", err)
 	}
 
-	return rows, nil
+	r := Result{
+		LastInsertId: lastInsertId,
+		RowsAffected: rowsAffected,
+	}
+
+	return r, rerr
 }
 
 type RowMap struct {
 	m map[string]any
 }
 
+type Result struct {
+	RowsAffected int64
+	LastInsertId int64
+}
+
 func (m *RowMap) String(k string) string {
-	return m.m[k].(string)
+	switch v := m.m[k].(type) {
+	case string:
+		return v
+	default:
+		slog.Error("cannot convert %v to a string type", "grepo", v)
+		return ""
+	}
 }
 
+type IntegerType interface {
+	~int8 | ~int16 | ~int32 | ~int64
+}
+
+// toInteger is a generic function that handles conversion to any supported integer type
+func toInteger[T IntegerType](v any) T {
+	switch val := v.(type) {
+	case int64:
+		return T(val)
+	case int32:
+		return T(val)
+	case int16:
+		return T(val)
+	case int8:
+		return T(val)
+	default:
+		slog.Error("cannot convert %v to an integer type", "grepo", val)
+		return 0
+	}
+}
+
+// Int64 attempts to assert and return the value within
+// the RowMap with the provided key (k) as an int64.
+// If the original value is an in64, the value will be
+// truncated to an int64 (precision will be lost).
+// If the assertion fails, then zero is returned.
 func (m *RowMap) Int64(k string) int64 {
-	return m.m[k].(int64)
+	return toInteger[int64](m.m[k])
 }
 
+// Int32 attempts to assert and return the value within
+// the RowMap with the provided key (k) as an int32.
+// If the original value is an in64, the value will be
+// truncated to an int32 (precision will be lost).
+// If the assertion fails, then zero is returned.
 func (m *RowMap) Int32(k string) int32 {
-	v64, ok := m.m[k].(int64)
-
-	if ok {
-		return int32(v64)
-	}
-
-	v32, ok := m.m[k].(int32)
-
-	if ok {
-		return v32
-	}
-
-	return 0
+	return toInteger[int32](m.m[k])
 }
 
+// Int16 attempts to assert and return the value within
+// the RowMap with the provided key (k) as an int16.
+// If the original value is an in64, the value will be
+// truncated to an int16 (precision will be lost).
+// If the assertion fails, then zero is returned.
+func (m *RowMap) Int16(k string) int16 {
+	return toInteger[int16](m.m[k])
+}
+
+// Int8 attempts to assert and return the value within
+// the RowMap with the provided key (k) as an int8.
+// If the original value is an in64, the value will be
+// truncated to an int8 (precision will be lost).
+// If the assertion fails, then zero is returned.
+func (m *RowMap) Int8(k string) int8 {
+	return toInteger[int8](m.m[k])
+}
+
+// Bool attempt to assert and return the value within
+// the RowMap with the provided key (k) as a bool.
+// If the assertion fails, then false is returned.
 func (m *RowMap) Bool(k string) bool {
-	v, ok := m.m[k].(int64)
-	if ok {
+	switch v := m.m[k].(type) {
+	case int64, int32, int16, int8:
+		// Convert to int64 for comparison
 		return v != 0
+	default:
+		slog.Error("attempting to call Bool resulted in a failed assertion for value", "grepo", m.m[k])
+		return false
 	}
-	// Handle case where it might be stored as int32
-	if v32, ok := m.m[k].(int32); ok {
-		return v32 != 0
-	}
-	return false
 }
 
+// Bytes attempt to assert and return the value within
+// the RowMap with the provided key (k) as a []byte.
+// If the assertion fails, then nil is returned.
 func (m *RowMap) Bytes(k string) []byte {
 	r, ok := m.m[k].([]byte)
 	if !ok {
+		slog.Error("attempting to call Bytes resulted in a failed assertion for value %v", "grepo", m.m[k])
 		return nil
 	}
 	return r
 }
-
-//func convert(v any, t string) any {
-//	// just grab the first part
-//	first := strings.Split(t, "(")
-//	aType := first[0]
-//
-//	switch aType {
-//	case "INTEGER", "INT":
-//		return v.(int64)
-//	case "CHAR", "CLOB", "TEXT", "NCHAR", "NVARCHAR", "VARCHAR", "STRING":
-//		return v.(string)
-//	default:
-//		return v
-//	}
-//}

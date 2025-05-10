@@ -187,3 +187,24 @@ func TestScanRows(t *testing.T) {
 		t.Errorf("want 10 albums got %d", len(album))
 	}
 }
+
+func TestExecute(t *testing.T) {
+
+	r, err := albums.Execute(context.Background(), `insert into Artist ("name") values ($2)`, []any{"Grepo"})
+
+	if err != nil {
+		t.Errorf("failed to insert row %v", err)
+		return
+	}
+
+	if r.RowsAffected != 1 {
+		t.Errorf("want 1 row affected got %d", r.RowsAffected)
+		return
+	}
+
+	if r.LastInsertId == 0 {
+		t.Errorf("want 1 row affected got %d", r.RowsAffected)
+		return
+	}
+
+}
