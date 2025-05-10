@@ -22,11 +22,12 @@ var (
 	albums Repository[Album]
 )
 
-func openTempDb(path string) (*sql.DB, error) {
-	_, err := os.Stat(path)
+func createTempDatabase(source string) (*os.File, error) {
+	_, err := os.Stat(source)
+
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to locate database file %s: %w", path, err)
+			return nil, fmt.Errorf("failed to locate source database file %s: %w", source, err)
 		}
 		return nil, err
 	}
@@ -37,45 +38,44 @@ func openTempDb(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
+	fmt.Printf("Created temp file: %+v\n", tmpFile.Name())
 	_ = tmpFile.Close()
 
 	// Copy the original database file to the temporary file
-	input, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read source database: %w", err)
-	}
+	// we already read it, we know it's there
+	input, _ := os.ReadFile(source)
 
 	if err := os.WriteFile(tmpFile.Name(), input, 0600); err != nil {
 		return nil, fmt.Errorf("failed to write temp database: %w", err)
 	}
 
+	return tmpFile, nil
+}
+
+func openDatabase(file *os.File) (*sql.DB, error) {
 	// Open the temporary database
-	db, err := sql.Open("sqlite3", tmpFile.Name())
+	db, err := sql.Open("sqlite3", file.Name())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open temp database: %w", err)
 	}
 
-	runtime.SetFinalizer(db, func(db *sql.DB) {
-		_ = db.Close()
-		_ = os.Remove(tmpFile.Name())
-	})
-
 	return db, nil
 }
 
-func setup() {
+func TestMain(m *testing.M) {
 	_, name, _, _ := runtime.Caller(0)
 	testDatabase := filepath.Join(filepath.Dir(name), "test_files", "chinook.sqlite")
-	database, err := openTempDb(testDatabase)
+	file, err := createTempDatabase(testDatabase)
+	database, err := openDatabase(file)
 	if err != nil {
 		log.Fatal("Cannot create connection", err)
 	}
 	albums = NewRepository[Album](database)
-}
-
-func TestMain(m *testing.M) {
-	setup()
 	code := m.Run()
+	// Cleanup
+	_ = database.Close()
+	_ = file.Close()
+	_ = os.Remove(file.Name())
 	os.Exit(code)
 }
 
@@ -206,5 +206,4 @@ func TestExecute(t *testing.T) {
 		t.Errorf("want 1 row affected got %d", r.RowsAffected)
 		return
 	}
-
 }
