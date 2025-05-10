@@ -4,6 +4,11 @@
 Yes, there a probably hundreds of these out there, but this library is currently 
 being written by me to learn the Go programming language.
 
+## The Demo Database
+This library is currently tested primarily around SQLite (and starting work on Postgresql), and uses the
+[chinook.sqlite](https://github.com/lerocha/chinook-database/blob/master/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite_) demo 
+database from the [Chinook Database project](https://github.com/lerocha/chinook-database).
+
 ## Using MapRows() / MapRow()
 
 ### MapRows()
