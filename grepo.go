@@ -23,7 +23,7 @@ type Connector interface {
 type ScanFunc[T any] func(Scanner) (*T, error)
 
 // MapFunc is a generic function type that converts a map of string-any pairs into a specific type T.
-type MapFunc[T any] func(rowMap *RowMap) *T
+type MapFunc[T any] func(r *RowMap) *T
 
 // Repository defines a generic interface for database operations on type T.
 type Repository[T any] interface {
