@@ -75,7 +75,11 @@ func TestMain(m *testing.M) {
 	// Cleanup
 	_ = database.Close()
 	_ = file.Close()
-	_ = os.Remove(file.Name())
+	err = os.Remove(file.Name())
+	if err != nil {
+		fmt.Printf("Error deleting temp test file %v", err)
+	}
+
 	os.Exit(code)
 }
 
@@ -190,7 +194,10 @@ func TestScanRows(t *testing.T) {
 
 func TestExecute(t *testing.T) {
 
-	r, err := albums.Execute(context.Background(), `insert into Artist ("name") values ($2)`, []any{"Grepo"})
+	r, err := albums.Execute(
+		context.Background(),
+		`insert into Artist ("name") values ($1)`,
+		[]any{"Grepo"})
 
 	if err != nil {
 		t.Errorf("failed to insert row %v", err)
