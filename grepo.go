@@ -155,18 +155,6 @@ func (repo repository[T]) MapRows(
 	return results, nil
 }
 
-func toMap(cols []string, values []any) *RowMap {
-	rowMap := make(map[string]any, len(cols))
-
-	for i, col := range cols {
-		rowMap[col] = values[i]
-	}
-
-	return &RowMap{
-		m: rowMap,
-	}
-}
-
 func (repo repository[T]) ScanRow(
 	_ context.Context,
 	sql string,
@@ -293,6 +281,9 @@ func (repo repository[T]) Execute(
 	return r, rerr
 }
 
+type IntegerType interface {
+	~int8 | ~int16 | ~int32 | ~int64
+}
 type RowMap struct {
 	m map[string]any
 }
@@ -302,18 +293,16 @@ type Result struct {
 	LastInsertId int64
 }
 
-func (m *RowMap) String(k string) string {
-	switch v := m.m[k].(type) {
-	case string:
-		return v
-	default:
-		slog.Error("cannot convert %v to a string type", "grepo", v)
-		return ""
-	}
-}
+func toMap(cols []string, values []any) *RowMap {
+	rowMap := make(map[string]any, len(cols))
 
-type IntegerType interface {
-	~int8 | ~int16 | ~int32 | ~int64
+	for i, col := range cols {
+		rowMap[col] = values[i]
+	}
+
+	return &RowMap{
+		m: rowMap,
+	}
 }
 
 // toInteger is a generic function that handles conversion to any supported integer type
@@ -330,6 +319,16 @@ func toInteger[T IntegerType](v any) T {
 	default:
 		slog.Error("cannot convert %v to an integer type", "grepo", val)
 		return 0
+	}
+}
+
+func (m *RowMap) String(k string) string {
+	switch v := m.m[k].(type) {
+	case string:
+		return v
+	default:
+		slog.Error("cannot convert %v to a string type", "grepo", v)
+		return ""
 	}
 }
 
