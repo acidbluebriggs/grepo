@@ -6,39 +6,35 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"maps"
+	"reflect"
+	"slices"
+	"strings"
+	"unicode"
 )
-
-// Scanner defines an interface for scanning database rows into variables.
-// This interface is typically implemented by database/sql.Row and database/sql.Rows.
-type Scanner interface {
-	// Scan copies the columns in the current row into the values pointed at by dest.
-	Scan(dest ...any) error
-}
 
 type Connector interface {
 	GetConnection() (*sql.DB, error)
 }
-
-// ScanFunc is a generic function type that handles scanning a database row into a specific type T.
-type ScanFunc[T any] func(Scanner) (*T, error)
 
 // MapFunc is a generic function type that converts a map of string-any pairs into a specific type T.
 type MapFunc[T any] func(r *RowMap) *T
 
 // Repository defines a generic interface for database operations on type T.
 type Repository[T any] interface {
-	// ScanRow executes a query and scans a single row into type T using the provided scan function.
-	ScanRow(ctx context.Context, sql string, args []any, scanFunc ScanFunc[T]) (*T, error)
-
-	// ScanRows executes a query and scans multiple rows into type T using the provided scan function.
-	ScanRows(ctx context.Context, sql string, args []any, scanFunc ScanFunc[T]) ([]*T, error)
-
 	// MapRow executes a query and maps a single row into type T using the provided map function.
 	MapRow(ctx context.Context, sql string, args []any, mapFunc MapFunc[T]) (*T, error)
+
+	// MapRowN executes a query and maps a single row into type T using the provided map function.
+	MapRowN(ctx context.Context, sql string, args map[string]any, mapFunc MapFunc[T]) (*T, error)
 
 	// MapRows executes a query and maps multiple rows into type T using the provided map function.
 	MapRows(ctx context.Context, sql string, args []any, mapFunc MapFunc[T]) ([]*T, error)
 
+	// MapRowsN executes a query and maps multiple rows into type T using the provided map function.
+	MapRowsN(ctx context.Context, sql string, args map[string]any, mapFunc MapFunc[T]) ([]*T, error)
+
+	// Execute experimental update, does not support slices yet.
 	Execute(ctx context.Context, sql string, args []any) (Result, error)
 }
 
@@ -90,6 +86,30 @@ func (repo repository[T]) MapRow(
 	return result[0], nil
 }
 
+func (repo repository[T]) MapRowN(
+	ctx context.Context,
+	sql string,
+	args map[string]any,
+	mapFunc MapFunc[T]) (*T, error) {
+
+	entries := namedParameters(sql, args)
+	query, err := substitute(sql, entries)
+	newArgs := flattenArgs(entries)
+
+	if err != nil {
+		return nil, fmt.Errorf("substitution of named parameters failed %w", err)
+	}
+
+	result, err := repo.MapRow(ctx, query, newArgs, mapFunc)
+
+	if err != nil {
+		slog.Error(fmt.Sprintf("unable to execute query '%s' with parameters %v", query, args))
+		return nil, fmt.Errorf("unable to execute query '%s' with parameters %+v %w", query, args, err)
+	}
+
+	return result, nil
+}
+
 func (repo repository[T]) MapRows(
 	_ context.Context,
 	sql string,
@@ -108,7 +128,41 @@ func (repo repository[T]) MapRows(
 		}
 	}()
 
+	// need to handle the issue if we have slice in the args (like an IN clause arg)
+	// TODO this is really ugly! Fix it. Use reflection here again?
+	// The point here is that were are going to expand all arguments to their positions in the
+	// the statement
+
+	for i, arg := range args {
+		switch v := arg.(type) {
+		default:
+			// Check if it's any kind of slice
+			rv := reflect.ValueOf(v)
+			if rv.Kind() == reflect.Slice {
+				replacements := make([]string, rv.Len())
+				if rv.IsValid() && !rv.IsNil() {
+					for i := 0; i < rv.Len(); i++ {
+						elem := rv.Index(i)
+						switch elem.Kind() {
+						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+							replacements[i] = fmt.Sprintf("%d", elem.Int())
+						case reflect.Bool:
+							replacements[i] = fmt.Sprintf("%t", elem.Bool())
+						case reflect.String:
+							replacements[i] = fmt.Sprintf("'%s'", elem.String())
+						case reflect.Float32, reflect.Float64:
+							replacements[i] = fmt.Sprintf("%f", elem.Float())
+						default:
+							replacements[i] = fmt.Sprintf("%v", elem.Interface())
+						}
+					}
+				}
+				args[i] = strings.Join(replacements, ", ")
+			}
+		}
+	}
 	rows, err := stmt.Query(args...)
+
 	if err != nil {
 		return nil, err
 	}
@@ -155,73 +209,60 @@ func (repo repository[T]) MapRows(
 	return results, nil
 }
 
-func (repo repository[T]) ScanRow(
-	_ context.Context,
+func (repo repository[T]) MapRowsN(
+	ctx context.Context,
 	sql string,
-	args []any,
-	scanFn ScanFunc[T]) (*T, error) {
+	args map[string]any,
+	mapFunc MapFunc[T]) ([]*T, error) {
 
-	stmt, err := repo.database.Prepare(sql)
-	if err != nil {
-		slog.Error("Error preparing statement", "grepo", err.Error())
-		return nil, err
-	}
-	defer func() {
-		if err = stmt.Close(); err != nil {
-			slog.Error("Error closing statement", "grepo", err.Error())
-		}
-	}()
-
-	row := stmt.QueryRow(args...)
-	if err = row.Err(); err != nil {
-		return nil, err
-	}
-
-	scanned, err := scanFn(row)
+	entries := namedParameters(sql, args)
+	query, err := substitute(sql, entries)
 
 	if err != nil {
-		slog.Error("ScanRow failed %v", "grepo", err)
-		return nil, err
+		return nil, fmt.Errorf("substitution of named parameters failed %w", err)
 	}
 
-	return scanned, nil
+	newArgs := flattenArgs(entries)
+	result, err := repo.MapRows(ctx, query, newArgs, mapFunc)
+
+	if err != nil {
+		slog.Error(fmt.Sprintf("unable to execute query '%s' with parameters %v", query, args))
+		return nil, fmt.Errorf("unable to execute query '%s' with parameters %+v %w", query, args, err)
+	}
+
+	return result, nil
 }
 
-func (repo repository[T]) ScanRows(
-	_ context.Context,
-	sql string,
-	args []any,
-	scanFn ScanFunc[T]) ([]*T, error) {
+func flattenArgs(entries map[string]paramEntry) []any {
+	// need the entries sorted by their position
+	sorted := slices.SortedFunc(maps.Values(entries), func(entry paramEntry, entry2 paramEntry) int {
+		return entry.pos - entry2.pos
+	})
 
-	stmt, err := repo.database.Prepare(sql)
+	var newArgs []any
 
-	if err != nil {
-		slog.Error("error preparing statement", "grepo", err)
-		return nil, err
+	for _, pe := range sorted {
+		switch v := pe.val.(type) {
+		default:
+			// Check if it's any kind of slice
+			rv := reflect.ValueOf(v)
+			if rv.Kind() == reflect.Slice {
+				if rv.IsValid() && !rv.IsNil() {
+					for i := 0; i < rv.Len(); i++ {
+						elem := rv.Index(i)
+						if elem.IsValid() {
+							newArgs = append(newArgs, elem.Interface())
+						}
+					}
+					pe.len = rv.Len()
+				}
+			} else {
+				newArgs = append(newArgs, pe.val)
+			}
+		}
 	}
 
-	defer func() {
-		if err = stmt.Close(); err != nil {
-			slog.Warn("error closing rows %w", "grepo", err.Error())
-		}
-	}()
-
-	rows, err := stmt.Query(args...)
-
-	var results []*T
-
-	for rows.Next() {
-		result, err := scanFn(rows)
-		if err != nil {
-			slog.Error("ScanRows failed scanning row %v", "grepo", err)
-			return nil, err
-		}
-		results = append(results, result)
-	}
-
-	slog.Debug("ScanRows resulted in %d rows(s)", "grepo", len(results))
-
-	return results, nil
+	return newArgs
 }
 
 // Execute performs the given query with args and returns a Result
@@ -317,7 +358,7 @@ func toInteger[T IntegerType](v any) T {
 	case int8:
 		return T(val)
 	default:
-		slog.Error("cannot convert %v to an integer type", "grepo", val)
+		slog.Error(fmt.Sprintf("cannot convert %v to an integer type", val))
 		return 0
 	}
 }
@@ -327,7 +368,7 @@ func (m *RowMap) String(k string) string {
 	case string:
 		return v
 	default:
-		slog.Error("cannot convert %v to a string type", "grepo", v)
+		slog.Error(fmt.Sprintf("cannot convert %v to a string type", v))
 		return ""
 	}
 }
@@ -393,3 +434,117 @@ func (m *RowMap) Bytes(k string) []byte {
 	}
 	return r
 }
+
+type paramEntry struct {
+	name string //probably redundant as it will be used in a map... maybe
+	pos  int
+	val  any
+	len  int
+}
+
+func namedParameters(s string, args map[string]any) map[string]paramEntry {
+	params := make(map[string]paramEntry)
+	fields := strings.Fields(s)
+	position := 0
+
+	for _, word := range fields {
+		if strings.HasPrefix(word, ":") {
+			position++
+			param := strings.TrimFunc(word, func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != ':'
+			})
+
+			pe := paramEntry{
+				pos:  position,
+				name: param,
+				val:  args[param],
+				len:  1,
+			}
+
+			switch v := args[param].(type) {
+			default:
+				// Check if it's any kind of slice
+				rv := reflect.ValueOf(v)
+				if rv.Kind() == reflect.Slice {
+					pe.len = rv.Len()
+					position += rv.Len()
+				}
+			}
+
+			params[param] = pe
+		}
+	}
+
+	// this needs to error if the named param is not found
+	return params
+}
+
+func substitute(sql string, params map[string]paramEntry) (string, error) {
+	var b strings.Builder
+	b.Grow(len(sql))
+
+	words := strings.Fields(sql)
+	var found []string
+	position := 1
+	for i, word := range words {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+
+		if strings.HasPrefix(word, ":") {
+			param := strings.TrimFunc(word, func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != ':'
+			})
+			found = append(found, param)
+			if pe, exists := params[param]; exists {
+				positions := make([]string, pe.len)
+				for pi := range pe.len {
+					positions[pi] = fmt.Sprintf("$%d", position)
+					position++
+				}
+				b.WriteString(strings.Join(positions, ", "))
+			} else {
+				return "", fmt.Errorf("parameter %s not found in args %v", colorize(param, Red), params)
+			}
+		} else {
+			b.WriteString(word)
+		}
+	}
+
+	if len(found) != len(params) {
+		return b.String(), fmt.Errorf("received %d arguments and only replaced %d", len(params), len(found))
+	}
+
+	return b.String(), nil
+}
+
+/*
+Eventually we'll store these sql statements in a cache, or even pre-parse them at init, or lazy but then
+we have race condition issues, and mutexes needed. probably a ReadWrite mutex.
+
+We can also perform this replacement in one function, as perceived performance, but that makes it harder to test,
+and increases complexity... not the Go way?
+*/
+
+//var queriesFS embed.FS
+
+//func loadQueries() (map[string]string, error) {
+//	queries := make(map[string]string)
+//
+//	files, err := queriesFS.ReadDir("queries")
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	for _, file := range files {
+//		if strings.HasSuffix(file.Name(), ".sql") {
+//			content, err := queriesFS.ReadFile("queries/" + file.Name())
+//			if err != nil {
+//				return nil, err
+//			}
+//			queries[file.Name()] = string(content)
+//		}
+//	}
+//
+//	return queries, nil
+//}
