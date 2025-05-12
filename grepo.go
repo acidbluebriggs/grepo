@@ -451,7 +451,7 @@ func namedParameters(s string, args map[string]any) map[string]paramEntry {
 		if strings.HasPrefix(word, ":") {
 			position++
 			param := strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != ':'
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
 			})
 
 			pe := paramEntry{
@@ -493,7 +493,7 @@ func substitute(sql string, params map[string]paramEntry) (string, error) {
 
 		if strings.HasPrefix(word, ":") {
 			param := strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != ':'
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
 			})
 			found = append(found, param)
 			if pe, exists := params[param]; exists {

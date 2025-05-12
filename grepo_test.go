@@ -164,10 +164,10 @@ func TestNamedParameters(t *testing.T) {
 		{
 			"1",
 			"select Name from Artist where ArtistId = :artistId limit :limit",
-			map[string]any{":artistId": 1, ":limit": 2},
+			map[string]any{"artistId": 1, "limit": 2},
 			map[string]paramEntry{
-				":artistId": {pos: 1, name: ":artistId", len: 1, val: 1},
-				":limit":    {pos: 2, name: ":limit", len: 1, val: 2},
+				"artistId": {pos: 1, name: "artistId", len: 1, val: 1},
+				"limit":    {pos: 2, name: "limit", len: 1, val: 2},
 			}},
 		{
 			"2",
@@ -178,9 +178,9 @@ func TestNamedParameters(t *testing.T) {
 		{
 			"3",
 			"select Name from Artist where ArtistId in ( :ids )",
-			map[string]any{":ids": []any{1, 2, 3}},
+			map[string]any{"ids": []any{1, 2, 3}},
 			map[string]paramEntry{
-				":ids": {len: 3, pos: 1, name: ":ids", val: []any{1, 2, 3}},
+				"ids": {len: 3, pos: 1, name: "ids", val: []any{1, 2, 3}},
 			}},
 	}
 
@@ -207,8 +207,8 @@ func TestSubstitute(t *testing.T) {
 			"select Name from Artist where ArtistId = :artistId limit :limit",
 			"select Name from Artist where ArtistId = $1 limit $2",
 			map[string]paramEntry{
-				":artistId": {val: 1, name: ":artistId", len: 1, pos: 1},
-				":limit":    {val: 1, name: ":limit", len: 1, pos: 2},
+				"artistId": {val: 1, name: "artistId", len: 1, pos: 1},
+				"limit":    {val: 1, name: "limit", len: 1, pos: 2},
 			},
 		},
 		{
@@ -216,8 +216,8 @@ func TestSubstitute(t *testing.T) {
 			"select Name from Artist where ArtistId in ( :ids ) limit :limit", // yes the limit is dumb, just testing replacements
 			"select Name from Artist where ArtistId in ( $1, $2, $3 ) limit $4",
 			map[string]paramEntry{
-				":ids":   {val: []any{1, 2, 3}, name: ":ids", len: 3, pos: 1},
-				":limit": {val: 1, name: ":limit", len: 1, pos: 2},
+				"ids":   {val: []any{1, 2, 3}, name: "ids", len: 3, pos: 1},
+				"limit": {val: 1, name: "limit", len: 1, pos: 2},
 			},
 		},
 		{
@@ -225,8 +225,8 @@ func TestSubstitute(t *testing.T) {
 			"select Name from Artist\nwhere ArtistId in ( :ids )\nlimit :limit", // yes the limit is dumb, just testing replacements
 			"select Name from Artist where ArtistId in ( $1, $2, $3 ) limit $4",
 			map[string]paramEntry{
-				":ids":   {val: []any{1, 2, 3}, name: ":ids", len: 3, pos: 1},
-				":limit": {val: 1, name: ":limit", len: 1, pos: 2},
+				"ids":   {val: []any{1, 2, 3}, name: "ids", len: 3, pos: 1},
+				"limit": {val: 1, name: "limit", len: 1, pos: 2},
 			},
 		},
 	}
@@ -264,7 +264,7 @@ func TestRepository_MapRowN(t *testing.T) {
 		context.Background(),
 		"select AlbumID, Title, ArtistID from Album where AlbumId = :albumId",
 		map[string]any{
-			":albumId": 1,
+			"albumId": 1,
 		},
 		func(r *RowMap) *Album {
 			return &Album{
@@ -289,7 +289,7 @@ func TestRepository_MapRowsN(t *testing.T) {
 		context.Background(),
 		"select ArtistId from Artist where ArtistId in ( :artistIds )",
 		map[string]any{
-			":artistIds": []int64{1, 2, 3},
+			"artistIds": []int64{1, 2, 3},
 		},
 		func(r *RowMap) *Album {
 			return &Album{

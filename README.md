@@ -53,4 +53,23 @@ func AlbumWithId(id int64) (*Album, error) {
     return album, nil
 }
 
+
+func AlbumWith(id int64) (*Album, error) {
+  album, err := albums.MapRow(
+    context.Background(),
+    "select AlbumId, Title, ArtistId from Album where AlbumId = $1",
+    []any{id},
+    func(r *RowMap) *Album {
+      return &Album{
+        AlbumID:  r.Int64("AlbumId"),
+        Title:    r.String("Title"),
+        ArtistID: r.Int32("ArtistId"),
+      }
+    },
+  )
+
+    // of course handle the error but this is a snippet  
+    return album, nil
+}
+
 ```

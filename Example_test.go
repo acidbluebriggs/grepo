@@ -55,3 +55,25 @@ func Example_grepo_MapRows() {
 	// AC/DC
 	// Aaron Copland & London Symphony Orchestra
 }
+
+func Example_grepo_MapRowsN() {
+	artists, _ := repo().MapRowsN(
+		context.Background(),
+		"select Name from Artist where ArtistId in ( :ids ) order by Name",
+		map[string]any{
+			"ids": []any{1, 2, 3},
+		},
+		func(r *grepo.RowMap) *struct{ Name string } {
+			return &struct{ Name string }{
+				Name: r.String("Name"),
+			}
+		})
+
+	for _, artist := range artists {
+		fmt.Printf("%s\n", artist.Name)
+	}
+	// Output:
+	// AC/DC
+	// Accept
+	// Aerosmith
+}
