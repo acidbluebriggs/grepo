@@ -412,6 +412,16 @@ func (m *RowMap) try(k string) error {
 	return nil
 }
 
+func (c ColReadError) Error() string {
+	return fmt.Sprintf("cannot convert key '%s' value '%v' to '%s'", c.key, c.value, c.target)
+}
+
+func NewColReadError(key string, value any, target string) ColReadError {
+	return ColReadError{
+		key, value, target,
+	}
+}
+
 func (m *RowMap) String(k string) string {
 	err := m.try(k)
 
@@ -424,7 +434,7 @@ func (m *RowMap) String(k string) string {
 	case string:
 		return v
 	default:
-		m.addErr(formatErr(k, v, "string"))
+		m.addErr(NewColReadError(k, v, "string"))
 		return ""
 	}
 }
@@ -444,7 +454,7 @@ func (m *RowMap) Int64(k string) int64 {
 	}
 
 	if v, err := toInteger[int64](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "int64"))
+		m.addErr(NewColReadError(k, v, "int64"))
 		return 0
 	} else {
 		return v
@@ -465,7 +475,7 @@ func (m *RowMap) Int32(k string) int32 {
 	}
 
 	if v, err := toInteger[int32](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "int32"))
+		m.addErr(NewColReadError(k, v, "int32"))
 		return 0
 	} else {
 		return v
@@ -486,7 +496,7 @@ func (m *RowMap) Int16(k string) int16 {
 	}
 
 	if v, err := toInteger[int16](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "int16"))
+		m.addErr(NewColReadError(k, v, "int16"))
 		return 0
 	} else {
 		return v
@@ -507,7 +517,7 @@ func (m *RowMap) Int8(k string) int8 {
 	}
 
 	if v, err := toInteger[int8](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "int8"))
+		m.addErr(NewColReadError(k, v, "int8"))
 		return 0
 	} else {
 		return v
@@ -526,7 +536,7 @@ func (m *RowMap) Float64(k string) float64 {
 	}
 
 	if v, err := toFloat[float64](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "float64"))
+		m.addErr(NewColReadError(k, v, "float64"))
 		return 0
 	} else {
 		return v
@@ -545,7 +555,7 @@ func (m *RowMap) Float32(k string) float32 {
 	}
 
 	if v, err := toFloat[float32](m.m[k]); err != nil {
-		m.addErr(formatErr(k, v, "float32"))
+		m.addErr(NewColReadError(k, v, "float32"))
 		return 0
 	} else {
 		return v
@@ -568,7 +578,7 @@ func (m *RowMap) Bool(k string) bool {
 		// Convert to int64 for comparison
 		return v == 0
 	default:
-		m.addErr(formatErr(k, v, "bool"))
+		m.addErr(NewColReadError(k, v, "bool"))
 		return false
 	}
 }
@@ -586,14 +596,16 @@ func (m *RowMap) Bytes(k string) []byte {
 
 	r, ok := m.m[k].([]byte)
 	if !ok {
-		m.addErr(formatErr(k, r, "[]byte"))
+		m.addErr(NewColReadError(k, r, "[]byte"))
 		return nil
 	}
 	return r
 }
 
-func formatErr(k string, v any, t string) error {
-	return fmt.Errorf("cannot convert key '%s' value '%v' to '%s'", k, v, t)
+type ColReadError struct {
+	key    string
+	value  any
+	target string
 }
 
 type paramEntry struct {
@@ -640,34 +652,6 @@ func namedParameters(s string, args map[string]any) map[string]paramEntry {
 	return params
 }
 
-/*
-	var found []string
-
-	position := 1
-	for i, word := range words {
-		if strings.HasPrefix(word, ":") {
-			param := strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
-			})
-			found = append(found, param)
-			//words[i] = param // overwrite the original
-
-			if pe, exists := params[param]; exists {
-				positions := make([]string, pe.len)
-				for pi := range pe.len {
-					param
-					positions[pi] = fmt.Sprintf("$%d", position)
-					position++
-				}
-
-				b.WriteString(strings.Join(positions, ","))
-			} else {
-				return "", fmt.Errorf("parameter %s not found in args %v", colorize(param, Red), params)
-			}
-		}
-	}
-*/
-
 func substitute(sql string, params map[string]paramEntry) (string, error) {
 	fields := strings.Fields(sql)
 	var found []string
@@ -700,34 +684,3 @@ func substitute(sql string, params map[string]paramEntry) (string, error) {
 
 	return strings.Join(fields, " "), nil
 }
-
-/*
-Eventually we'll store these sql statements in a cache, or even pre-parse them at init, or lazy but then
-we have race condition issues, and mutexes needed. probably a ReadWrite mutex.
-
-We can also perform this replacement in one function, as perceived performance, but that makes it harder to test,
-and increases complexity... not the Go way?
-*/
-
-//var queriesFS embed.FS
-
-//	func loadQueries() (map[string]string, error) {
-//		queries := make(map[string]string)
-//
-//		files, err := queriesFS.ReadDir("queries")
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		for _, file := range files {
-//			if strings.HasSuffix(file.Name(), ".sql") {
-//				content, err := queriesFS.ReadFile("queries/" + file.Name())
-//				if err != nil {
-//					return nil, err
-//				}
-//				queries[file.Name()] = string(content)
-//			}
-//		}
-//
-//		return queries, nil
-//	}

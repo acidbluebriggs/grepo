@@ -90,17 +90,11 @@ func TestMapRows(t *testing.T) {
 		"select AlbumId, Title, ArtistId from Album",
 		nil,
 		func(r *RowMap) (*Album, error) {
-			a := &Album{
-				AlbumID:  r.Int64("AlbumId"),
-				Title:    r.String("Title"),
-				ArtistID: r.Int32("ArtistId"),
-			}
-
-			if err := r.Err(); r != nil {
-				return nil, err
-			}
-
-			return a, nil
+			return &Album{
+				AlbumID:  r.Int64("AlbuddmId"),
+				Title:    r.String("Tiddtle"),
+				ArtistID: r.Int32("ArtiddstId"),
+			}, r.Err()
 		})
 
 	if err != nil {

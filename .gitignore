@@ -7,3 +7,4 @@ full
 **/*.out
 *.gob
 trie
+notes.txt
