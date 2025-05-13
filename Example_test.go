@@ -19,6 +19,7 @@ func repo() grepo.Repository[struct{ Name string }] {
 }
 
 func Example_grepo_MapRow() {
+	// ignoring error for the example
 	artist, _ := repo().MapRow(
 		context.Background(),
 		"select Name from Artist where ArtistId = $1",
@@ -36,6 +37,7 @@ func Example_grepo_MapRow() {
 }
 
 func Example_grepo_MapRows() {
+	// ignoring error for the example
 	artists, _ := repo().MapRows(
 		context.Background(),
 		"select Name from Artist order by Name limit $1",
@@ -57,6 +59,7 @@ func Example_grepo_MapRows() {
 }
 
 func Example_grepo_MapRowsN() {
+	// ignoring error for the example
 	artists, _ := repo().MapRowsN(
 		context.Background(),
 		"select Name from Artist where ArtistId in ( :ids ) order by Name",
