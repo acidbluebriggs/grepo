@@ -260,49 +260,94 @@ func TestSubstituteFails(t *testing.T) {
 }
 
 func TestRepository_MapRowN(t *testing.T) {
-	results, err := albums.MapRowN(
-		context.Background(),
-		"select AlbumID, Title, ArtistID from Album where AlbumId = :albumId",
-		map[string]any{
-			"albumId": 1,
-		},
-		func(r *RowMap) *Album {
-			return &Album{
-				AlbumID:  r.Int64("AlbumId"),
-				Title:    r.String("Title"),
-				ArtistID: r.Int32("ArtistId"),
-			}
-		})
 
-	if err != nil {
-		t.Error(fmt.Errorf("error retrieving rows %w", err))
-		return
+	table := []struct {
+		query string
+		args  map[string]any
+		count int
+	}{
+		{
+			query: "select AlbumID, Title, ArtistID from Album where AlbumId = :id",
+			args: map[string]any{
+				"id": 1,
+			},
+			count: 1,
+		},
 	}
 
-	if results == nil {
-		t.Error(fmt.Errorf("expected results"))
+	for _, a := range table {
+		results, err := albums.MapRowN(
+			context.Background(),
+			a.query,
+			a.args,
+			func(r *RowMap) *Album {
+				return &Album{
+					AlbumID:  r.Int64("AlbumId"),
+					Title:    r.String("Title"),
+					ArtistID: r.Int32("ArtistId"),
+				}
+
+			})
+		if err != nil {
+			t.Error(fmt.Errorf("error retrieving rows %w", err))
+			return
+		}
+
+		if results == nil {
+			t.Error(fmt.Errorf("expected results"))
+		}
 	}
 }
 
 func TestRepository_MapRowsN(t *testing.T) {
-	results, err := albums.MapRowsN(
-		context.Background(),
-		"select ArtistId from Artist where ArtistId in ( :artistIds )",
-		map[string]any{
-			"artistIds": []int64{1, 2, 3},
+	table := []struct {
+		query string
+		args  map[string]any
+		count int
+	}{
+		{
+			query: "select AlbumID, Title, ArtistID from Album where AlbumId < :maxId",
+			args: map[string]any{
+				"maxId": 4,
+			},
+			count: 3,
 		},
-		func(r *RowMap) *Album {
-			return &Album{
-				AlbumID: r.Int64("ArtistId"),
-			}
-		})
+		{
 
-	if err != nil {
-		t.Error(fmt.Errorf("error retrieving rows %w", err))
-		return
+			query: "select ArtistId from Artist where ArtistId in ( :artistIds )",
+			args: map[string]any{
+				"artistIds": []any{1, 2, 3},
+			},
+			count: 3,
+		},
 	}
 
-	if len(results) != 3 {
-		t.Error(fmt.Errorf("want 3 results got %d", len(results)))
+	for _, a := range table {
+		results, err := albums.MapRowsN(
+			context.Background(),
+			a.query,
+			a.args,
+			func(r *RowMap) *Album {
+				return &Album{
+					AlbumID:  r.Int64("AlbumId"),
+					Title:    r.String("Title"),
+					ArtistID: r.Int32("ArtistId"),
+				}
+
+			})
+		if err != nil {
+			t.Error(fmt.Errorf("want 2 results, got zero from retrieving rows %w", err))
+			return
+		}
+
+		if results == nil {
+			t.Error(fmt.Errorf("want 3 results, got nil"))
+			return
+		}
+
+		if len(results) != 3 {
+			t.Error(fmt.Errorf("want 3 results, got %d", len(results)))
+			return
+		}
 	}
 }

@@ -129,10 +129,9 @@ func (repo repository[T]) MapRows(
 	}()
 
 	// need to handle the issue if we have slice in the args (like an IN clause arg)
-	// TODO this is really ugly! Fix it. Use reflection here again?
 	// The point here is that were are going to expand all arguments to their positions in the
-	// the statement
-
+	// the statement.
+	// Is reflection the correct thing? Type assertions were ugly, but perhaps a better way? not sure.
 	for i, arg := range args {
 		switch v := arg.(type) {
 		default:
@@ -274,7 +273,7 @@ func (repo repository[T]) Execute(
 	tx, err := repo.database.BeginTx(ctx, nil)
 
 	if err != nil {
-		slog.Error("unable to begin a transaction Execute() %w", "grepo", err)
+		slog.Error(fmt.Sprintf("unable to begin a transaction Execute() %v", err))
 		return Result{}, fmt.Errorf("function Execute() errored on Exec %w", err)
 
 	}
@@ -282,14 +281,14 @@ func (repo repository[T]) Execute(
 	result, err := tx.Exec(sql, args...)
 	if err != nil {
 		_ = tx.Rollback()
-		slog.Error("func Execute() errored on Exec", "grepo", err)
+		slog.Error(fmt.Sprintf("func Execute() errored on Exec %v", err))
 		return Result{}, fmt.Errorf("func Execute() errored on Exec: %w", err)
 	}
 
 	err = tx.Commit()
 
 	if err != nil {
-		slog.Error("error executing commit in Execute()", "grepo", err)
+		slog.Error(fmt.Sprintf("error executing commit in Execute()  %v", err))
 		return Result{}, fmt.Errorf("func Execute() failed during Commit: %w", err)
 	}
 
@@ -302,14 +301,14 @@ func (repo repository[T]) Execute(
 	// one of the two result calls causes an error. We may not want to fail
 	// completely. TODO need error types.
 	if rerr != nil {
-		slog.Error("error extracting rows affected from result", "grepo", err)
+		slog.Error(fmt.Sprintf("error extracting rows affected from result %v", err))
 		rowsAffected = -1
 	}
 
 	lastInsertId, err = result.LastInsertId()
 
 	if err != nil {
-		slog.Error("error extracting last insert id from result", "grepo", err)
+		slog.Error(fmt.Sprintf("error extracting last insert id from result %v", err))
 		lastInsertId = -1
 		rerr = fmt.Errorf("%w", err)
 	}
@@ -479,43 +478,65 @@ func namedParameters(s string, args map[string]any) map[string]paramEntry {
 	return params
 }
 
-func substitute(sql string, params map[string]paramEntry) (string, error) {
-	var b strings.Builder
-	b.Grow(len(sql))
-
-	words := strings.Fields(sql)
+/*
 	var found []string
+
 	position := 1
 	for i, word := range words {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-
 		if strings.HasPrefix(word, ":") {
 			param := strings.TrimFunc(word, func(r rune) bool {
 				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
 			})
 			found = append(found, param)
+			//words[i] = param // overwrite the original
+
+			if pe, exists := params[param]; exists {
+				positions := make([]string, pe.len)
+				for pi := range pe.len {
+					param
+					positions[pi] = fmt.Sprintf("$%d", position)
+					position++
+				}
+
+				b.WriteString(strings.Join(positions, ","))
+			} else {
+				return "", fmt.Errorf("parameter %s not found in args %v", colorize(param, Red), params)
+			}
+		}
+	}
+*/
+
+func substitute(sql string, params map[string]paramEntry) (string, error) {
+	fields := strings.Fields(sql)
+	var found []string
+	position := 1
+
+	for i, word := range fields {
+		if strings.HasPrefix(word, ":") {
+			param := strings.TrimFunc(word, func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
+			})
+			found = append(found, param)
+
 			if pe, exists := params[param]; exists {
 				positions := make([]string, pe.len)
 				for pi := range pe.len {
 					positions[pi] = fmt.Sprintf("$%d", position)
 					position++
 				}
-				b.WriteString(strings.Join(positions, ", "))
+				fields[i] = strings.Join(positions, ", ")
 			} else {
+				// could error and show where in the token/field path it failed
 				return "", fmt.Errorf("parameter %s not found in args %v", colorize(param, Red), params)
 			}
-		} else {
-			b.WriteString(word)
 		}
 	}
 
 	if len(found) != len(params) {
-		return b.String(), fmt.Errorf("received %d arguments and only replaced %d", len(params), len(found))
+		return "", fmt.Errorf("received %d arguments and only replaced %d", len(params), len(found))
 	}
 
-	return b.String(), nil
+	return strings.Join(fields, " "), nil
 }
 
 /*
@@ -528,23 +549,23 @@ and increases complexity... not the Go way?
 
 //var queriesFS embed.FS
 
-//func loadQueries() (map[string]string, error) {
-//	queries := make(map[string]string)
+//	func loadQueries() (map[string]string, error) {
+//		queries := make(map[string]string)
 //
-//	files, err := queriesFS.ReadDir("queries")
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	for _, file := range files {
-//		if strings.HasSuffix(file.Name(), ".sql") {
-//			content, err := queriesFS.ReadFile("queries/" + file.Name())
-//			if err != nil {
-//				return nil, err
-//			}
-//			queries[file.Name()] = string(content)
+//		files, err := queriesFS.ReadDir("queries")
+//		if err != nil {
+//			return nil, err
 //		}
-//	}
 //
-//	return queries, nil
-//}
+//		for _, file := range files {
+//			if strings.HasSuffix(file.Name(), ".sql") {
+//				content, err := queriesFS.ReadFile("queries/" + file.Name())
+//				if err != nil {
+//					return nil, err
+//				}
+//				queries[file.Name()] = string(content)
+//			}
+//		}
+//
+//		return queries, nil
+//	}
