@@ -91,9 +91,9 @@ func TestMapRows(t *testing.T) {
 		nil,
 		func(r *RowMap) (*Album, error) {
 			return &Album{
-				AlbumID:  r.Int64("AlbuddmId"),
-				Title:    r.String("Tiddtle"),
-				ArtistID: r.Int32("ArtiddstId"),
+				AlbumID:  r.Int64("AlbumId"),
+				Title:    r.String("Title"),
+				ArtistID: r.Int32("ArtistId"),
 			}, r.Err()
 		})
 
@@ -307,9 +307,9 @@ func TestRepository_MapRowNFails(t *testing.T) {
 		},
 		func(r *RowMap) (*Album, error) {
 			return &Album{
-				AlbumID:  r.Int64("InvalidKey1"), //
-				Title:    r.String("InvalidKey2"),
-				ArtistID: r.Int32("InvalidKey3"),
+				AlbumID:  r.Int64("AlbumID"), //
+				Title:    r.String("Title"),
+				ArtistID: r.Int32("ArtistID"),
 			}, r.Err()
 		})
 
