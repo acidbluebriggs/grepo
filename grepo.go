@@ -406,12 +406,9 @@ func (m *RowMap) Apply(t *any) (*any, error) {
 }
 
 func (m *RowMap) try(k string) error {
-	_, ok := m.m[k]
-
-	if !ok {
+	if _, ok := m.m[k]; !ok {
 		return fmt.Errorf("key '%s' does not exist in row map", k)
 	}
-
 	return nil
 }
 
