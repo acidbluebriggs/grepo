@@ -4,6 +4,7 @@ package grepo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -18,7 +19,8 @@ type Connector interface {
 }
 
 // MapFunc is a generic function type that converts a map of string-any pairs into a specific type T.
-type MapFunc[T any] func(r *RowMap) *T
+type MapFunc[T any] func(r *RowMap) (*T, error)
+type ApplyFunc[T any] func(t *T, r *RowMap) (*T, error)
 
 // Repository defines a generic interface for database operations on type T.
 type Repository[T any] interface {
@@ -70,7 +72,7 @@ func (repo repository[T]) MapRow(
 	if err != nil {
 		// would actually log this not just return an error
 		slog.Error(fmt.Sprintf("error occurred while executing row mapper: %v", err))
-		return nil, fmt.Errorf("error occurred while executing row mapper: %w", err)
+		return nil, errors.Join(errors.New("error occurred while executing row mapper"), err)
 	}
 
 	if len(result) > 1 {
@@ -104,7 +106,7 @@ func (repo repository[T]) MapRowN(
 
 	if err != nil {
 		slog.Error(fmt.Sprintf("unable to execute query '%s' with parameters %v", query, args))
-		return nil, fmt.Errorf("unable to execute query '%s' with parameters %+v %w", query, args, err)
+		return nil, err
 	}
 
 	return result, nil
@@ -194,8 +196,11 @@ func (repo repository[T]) MapRows(
 		}
 
 		rowMap := toMap(cols, values)
-		r := mapFunc(rowMap)
 
+		r, err := mapFunc(rowMap)
+		if err != nil {
+			return nil, err
+		}
 		results = append(results, r)
 	}
 
@@ -226,7 +231,7 @@ func (repo repository[T]) MapRowsN(
 
 	if err != nil {
 		slog.Error(fmt.Sprintf("unable to execute query '%s' with parameters %v", query, args))
-		return nil, fmt.Errorf("unable to execute query '%s' with parameters %+v %w", query, args, err)
+		return nil, err
 	}
 
 	return result, nil
@@ -324,8 +329,21 @@ func (repo repository[T]) Execute(
 type IntegerType interface {
 	~int8 | ~int16 | ~int32 | ~int64
 }
+
+type FloatType interface {
+	~float64 | ~float32
+}
+
 type RowMap struct {
 	m map[string]any
+	// Errors is for the convenience of collecting any errors during
+	// the reading of a RowMap's convenience functions such as
+	// the Int* functions, String(), Bool, Bytes. These functions
+	// will store any errors that might have been encountered during
+	// these calls.
+	// TODO, explain more... it's so you don't have to keep checking errors
+	// durning the mapping process, just return: if r.errors != nil { }
+	errors []error
 }
 
 type Result struct {
@@ -346,28 +364,70 @@ func toMap(cols []string, values []any) *RowMap {
 }
 
 // toInteger is a generic function that handles conversion to any supported integer type
-func toInteger[T IntegerType](v any) T {
+func toInteger[T IntegerType](v any) (T, error) {
 	switch val := v.(type) {
 	case int64:
-		return T(val)
+		return T(val), nil
 	case int32:
-		return T(val)
+		return T(val), nil
 	case int16:
-		return T(val)
+		return T(val), nil
 	case int8:
-		return T(val)
+		return T(val), nil
 	default:
-		slog.Error(fmt.Sprintf("cannot convert %v to an integer type", val))
-		return 0
+		return 0, fmt.Errorf("cannot convert %v to an integer type", v)
 	}
 }
 
+func toFloat[T FloatType](v any) (T, error) {
+	switch val := v.(type) {
+	case float32:
+		return T(val), nil
+	case float64:
+		return T(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %v to an float type", v)
+	}
+}
+
+func (m *RowMap) addErr(e error) {
+	m.errors = append(m.errors, e)
+}
+
+func (m *RowMap) Err() error {
+	return errors.Join(m.errors...)
+}
+
+func (m *RowMap) Apply(t *any) (*any, error) {
+	if err := m.Err(); m != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (m *RowMap) try(k string) error {
+	_, ok := m.m[k]
+
+	if !ok {
+		return fmt.Errorf("key '%s' does not exist in row map", k)
+	}
+
+	return nil
+}
+
 func (m *RowMap) String(k string) string {
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return ""
+	}
+
 	switch v := m.m[k].(type) {
 	case string:
 		return v
 	default:
-		slog.Error(fmt.Sprintf("cannot convert %v to a string type", v))
+		m.addErr(formatErr(k, v, "string"))
 		return ""
 	}
 }
@@ -378,7 +438,20 @@ func (m *RowMap) String(k string) string {
 // truncated to an int64 (precision will be lost).
 // If the assertion fails, then zero is returned.
 func (m *RowMap) Int64(k string) int64 {
-	return toInteger[int64](m.m[k])
+
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toInteger[int64](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "int64"))
+		return 0
+	} else {
+		return v
+	}
 }
 
 // Int32 attempts to assert and return the value within
@@ -387,7 +460,19 @@ func (m *RowMap) Int64(k string) int64 {
 // truncated to an int32 (precision will be lost).
 // If the assertion fails, then zero is returned.
 func (m *RowMap) Int32(k string) int32 {
-	return toInteger[int32](m.m[k])
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toInteger[int32](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "int32"))
+		return 0
+	} else {
+		return v
+	}
 }
 
 // Int16 attempts to assert and return the value within
@@ -396,28 +481,97 @@ func (m *RowMap) Int32(k string) int32 {
 // truncated to an int16 (precision will be lost).
 // If the assertion fails, then zero is returned.
 func (m *RowMap) Int16(k string) int16 {
-	return toInteger[int16](m.m[k])
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toInteger[int16](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "int16"))
+		return 0
+	} else {
+		return v
+	}
 }
 
 // Int8 attempts to assert and return the value within
 // the RowMap with the provided key (k) as an int8.
-// If the original value is an in64, the value will be
+// If the original value is anything larger, the value will be
 // truncated to an int8 (precision will be lost).
 // If the assertion fails, then zero is returned.
 func (m *RowMap) Int8(k string) int8 {
-	return toInteger[int8](m.m[k])
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toInteger[int8](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "int8"))
+		return 0
+	} else {
+		return v
+	}
+}
+
+// Float64 attempts to assert and return the value within
+// the RowMap with the provided key (k) as a float64.
+// If the assertion fails, then zero is returned.
+func (m *RowMap) Float64(k string) float64 {
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toFloat[float64](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "float64"))
+		return 0
+	} else {
+		return v
+	}
+}
+
+// Float32 attempts to assert and return the value within
+// the RowMap with the provided key (k) as a float64.
+// If the assertion fails, then zero is returned.
+func (m *RowMap) Float32(k string) float32 {
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return 0
+	}
+
+	if v, err := toFloat[float32](m.m[k]); err != nil {
+		m.addErr(formatErr(k, v, "float32"))
+		return 0
+	} else {
+		return v
+	}
 }
 
 // Bool attempt to assert and return the value within
 // the RowMap with the provided key (k) as a bool.
 // If the assertion fails, then false is returned.
 func (m *RowMap) Bool(k string) bool {
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return false
+	}
+
 	switch v := m.m[k].(type) {
 	case int64, int32, int16, int8:
 		// Convert to int64 for comparison
-		return v != 0
+		return v == 0
 	default:
-		slog.Error("attempting to call Bool resulted in a failed assertion for value", "grepo", m.m[k])
+		m.addErr(formatErr(k, v, "bool"))
 		return false
 	}
 }
@@ -426,12 +580,23 @@ func (m *RowMap) Bool(k string) bool {
 // the RowMap with the provided key (k) as a []byte.
 // If the assertion fails, then nil is returned.
 func (m *RowMap) Bytes(k string) []byte {
+	err := m.try(k)
+
+	if err != nil {
+		m.addErr(err)
+		return nil
+	}
+
 	r, ok := m.m[k].([]byte)
 	if !ok {
-		slog.Error("attempting to call Bytes resulted in a failed assertion for value %v", "grepo", m.m[k])
+		m.addErr(formatErr(k, r, "[]byte"))
 		return nil
 	}
 	return r
+}
+
+func formatErr(k string, v any, t string) error {
+	return fmt.Errorf("cannot convert key '%s' value '%v' to '%s'", k, v, t)
 }
 
 type paramEntry struct {

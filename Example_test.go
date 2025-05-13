@@ -23,10 +23,10 @@ func Example_grepo_MapRow() {
 		context.Background(),
 		"select Name from Artist where ArtistId = $1",
 		[]any{1},
-		func(r *grepo.RowMap) *struct{ Name string } {
+		func(r *grepo.RowMap) (*struct{ Name string }, error) {
 			return &struct{ Name string }{
 				Name: r.String("Name"),
-			}
+			}, r.Err()
 		})
 
 	fmt.Printf("%s\n", artist.Name)
@@ -40,10 +40,10 @@ func Example_grepo_MapRows() {
 		context.Background(),
 		"select Name from Artist order by Name limit $1",
 		[]any{3},
-		func(r *grepo.RowMap) *struct{ Name string } {
+		func(r *grepo.RowMap) (*struct{ Name string }, error) {
 			return &struct{ Name string }{
 				Name: r.String("Name"),
-			}
+			}, r.Err()
 		})
 
 	for _, artist := range artists {
@@ -63,10 +63,10 @@ func Example_grepo_MapRowsN() {
 		map[string]any{
 			"ids": []any{1, 2, 3},
 		},
-		func(r *grepo.RowMap) *struct{ Name string } {
+		func(r *grepo.RowMap) (*struct{ Name string }, error) {
 			return &struct{ Name string }{
 				Name: r.String("Name"),
-			}
+			}, r.Err()
 		})
 
 	for _, artist := range artists {

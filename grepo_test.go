@@ -89,12 +89,18 @@ func TestMapRows(t *testing.T) {
 		context.Background(),
 		"select AlbumId, Title, ArtistId from Album",
 		nil,
-		func(r *RowMap) *Album {
-			return &Album{
+		func(r *RowMap) (*Album, error) {
+			a := &Album{
 				AlbumID:  r.Int64("AlbumId"),
 				Title:    r.String("Title"),
 				ArtistID: r.Int32("ArtistId"),
 			}
+
+			if err := r.Err(); r != nil {
+				return nil, err
+			}
+
+			return a, nil
 		})
 
 	if err != nil {
@@ -112,12 +118,12 @@ func TestMapRow(t *testing.T) {
 		context.Background(),
 		"select AlbumId, Title, ArtistId from Album where AlbumId = $1",
 		[]any{1},
-		func(r *RowMap) *Album {
+		func(r *RowMap) (*Album, error) {
 			return &Album{
 				AlbumID:  r.Int64("AlbumId"),
 				Title:    r.String("Title"),
 				ArtistID: r.Int32("ArtistId"),
-			}
+			}, r.Err()
 		},
 	)
 
@@ -280,22 +286,42 @@ func TestRepository_MapRowN(t *testing.T) {
 			context.Background(),
 			a.query,
 			a.args,
-			func(r *RowMap) *Album {
+			func(r *RowMap) (*Album, error) {
 				return &Album{
 					AlbumID:  r.Int64("AlbumId"),
 					Title:    r.String("Title"),
 					ArtistID: r.Int32("ArtistId"),
-				}
-
+				}, r.Err()
 			})
 		if err != nil {
-			t.Error(fmt.Errorf("error retrieving rows %w", err))
+			t.Errorf("%v", err)
 			return
 		}
-
 		if results == nil {
 			t.Error(fmt.Errorf("expected results"))
 		}
+	}
+}
+
+func TestRepository_MapRowNFails(t *testing.T) {
+
+	_, err := albums.MapRowN(
+		context.Background(),
+		"select AlbumID, Title, ArtistID from Album where AlbumId = :id",
+		map[string]any{
+			"id": 1,
+		},
+		func(r *RowMap) (*Album, error) {
+			return &Album{
+				AlbumID:  r.Int64("InvalidKey1"), //
+				Title:    r.String("InvalidKey2"),
+				ArtistID: r.Int32("InvalidKey3"),
+			}, r.Err()
+		})
+
+	if err == nil {
+		t.Errorf("want error got nil")
+		return
 	}
 }
 
@@ -327,14 +353,14 @@ func TestRepository_MapRowsN(t *testing.T) {
 			context.Background(),
 			a.query,
 			a.args,
-			func(r *RowMap) *Album {
+			func(r *RowMap) (*Album, error) {
 				return &Album{
 					AlbumID:  r.Int64("AlbumId"),
 					Title:    r.String("Title"),
 					ArtistID: r.Int32("ArtistId"),
-				}
-
+				}, nil
 			})
+
 		if err != nil {
 			t.Error(fmt.Errorf("want 2 results, got zero from retrieving rows %w", err))
 			return
