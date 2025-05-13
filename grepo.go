@@ -96,11 +96,12 @@ func (repo repository[T]) MapRowN(
 
 	entries := namedParameters(sql, args)
 	query, err := substitute(sql, entries)
-	newArgs := flattenArgs(entries)
 
 	if err != nil {
 		return nil, fmt.Errorf("substitution of named parameters failed %w", err)
 	}
+
+	newArgs := flattenArgs(entries)
 
 	result, err := repo.MapRow(ctx, query, newArgs, mapFunc)
 
