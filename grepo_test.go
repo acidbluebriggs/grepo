@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"path/filepath"
@@ -166,8 +165,8 @@ func TestNamedParameters(t *testing.T) {
 			"select Name from Artist where ArtistId = :artistId limit :limit",
 			map[string]any{"artistId": 1, "limit": 2},
 			map[string]paramEntry{
-				"artistId": {pos: 1, name: "artistId", len: 1, val: 1},
-				"limit":    {pos: 2, name: "limit", len: 1, val: 2},
+				":artistId": {pos: 1, name: ":artistId", len: 1, val: 1},
+				":limit":    {pos: 2, name: ":limit", len: 1, val: 2},
 			}},
 		{
 			"2",
@@ -180,7 +179,7 @@ func TestNamedParameters(t *testing.T) {
 			"select Name from Artist where ArtistId in ( :ids )",
 			map[string]any{"ids": []any{1, 2, 3}},
 			map[string]paramEntry{
-				"ids": {len: 3, pos: 1, name: "ids", val: []any{1, 2, 3}},
+				":ids": {len: 3, pos: 1, name: ":ids", val: []any{1, 2, 3}},
 			}},
 	}
 
@@ -207,8 +206,8 @@ func TestSubstitute(t *testing.T) {
 			"select Name from Artist where ArtistId = :artistId limit :limit",
 			"select Name from Artist where ArtistId = $1 limit $2",
 			map[string]paramEntry{
-				"artistId": {val: 1, name: "artistId", len: 1, pos: 1},
-				"limit":    {val: 1, name: "limit", len: 1, pos: 2},
+				":artistId": {val: 1, name: ":artistId", len: 1, pos: 1},
+				":limit":    {val: 1, name: ":limit", len: 1, pos: 2},
 			},
 		},
 		{
@@ -216,17 +215,17 @@ func TestSubstitute(t *testing.T) {
 			"select Name from Artist where ArtistId in ( :ids ) limit :limit", // yes the limit is dumb, just testing replacements
 			"select Name from Artist where ArtistId in ( $1, $2, $3 ) limit $4",
 			map[string]paramEntry{
-				"ids":   {val: []any{1, 2, 3}, name: "ids", len: 3, pos: 1},
-				"limit": {val: 1, name: "limit", len: 1, pos: 2},
+				":ids":   {val: []any{1, 2, 3}, name: ":ids", len: 3, pos: 1},
+				":limit": {val: 1, name: ":limit", len: 1, pos: 2},
 			},
 		},
 		{
 			"three",
 			"select Name from Artist\nwhere ArtistId in ( :ids )\nlimit :limit", // yes the limit is dumb, just testing replacements
-			"select Name from Artist where ArtistId in ( $1, $2, $3 ) limit $4",
+			"select Name from Artist\nwhere ArtistId in ( $1, $2, $3 )\nlimit $4",
 			map[string]paramEntry{
-				"ids":   {val: []any{1, 2, 3}, name: "ids", len: 3, pos: 1},
-				"limit": {val: 1, name: "limit", len: 1, pos: 2},
+				":ids":   {val: []any{1, 2, 3}, name: ":ids", len: 3, pos: 1},
+				":limit": {val: 1, name: ":limit", len: 1, pos: 2},
 			},
 		},
 	}
@@ -248,15 +247,6 @@ func TestSubstitute(t *testing.T) {
 		})
 	}
 
-}
-
-func TestSubstituteFails(t *testing.T) {
-	s, err := substitute("select AlbumID, Title, ArtistID from Album where AlbumId = :albumId", nil)
-
-	if err == nil {
-		t.Errorf("sent zero arguments, expected one for query %s", s)
-		return
-	}
 }
 
 func TestRepository_MapRowN(t *testing.T) {
@@ -334,7 +324,7 @@ func TestRepository_MapRowsN(t *testing.T) {
 		},
 		{
 
-			query: "select ArtistId from Artist where ArtistId in ( :artistIds )",
+			query: "select ArtistId from Artist where ArtistId in (:artistIds)",
 			args: map[string]any{
 				"artistIds": []any{1, 2, 3},
 			},

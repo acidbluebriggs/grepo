@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"maps"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
-	"unicode"
 )
 
 type Connector interface {
@@ -616,72 +616,57 @@ type paramEntry struct {
 	len  int
 }
 
+var re = regexp.MustCompile(`:[a-zA-Z]+`)
+
 func namedParameters(s string, args map[string]any) map[string]paramEntry {
 	params := make(map[string]paramEntry)
-	fields := strings.Fields(s)
+	matches := re.FindAllString(s, -1)
 	position := 0
 
-	for _, word := range fields {
-		if strings.HasPrefix(word, ":") {
-			position++
-			param := strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
-			})
-
-			pe := paramEntry{
-				pos:  position,
-				name: param,
-				val:  args[param],
-				len:  1,
-			}
-
-			switch v := args[param].(type) {
-			default:
-				// Check if it's any kind of slice
-				rv := reflect.ValueOf(v)
-				if rv.Kind() == reflect.Slice {
-					pe.len = rv.Len()
-					position += rv.Len()
-				}
-			}
-
-			params[param] = pe
+	for _, param := range matches {
+		position++
+		arg := param[1:]
+		pe := paramEntry{
+			pos:  position,
+			name: param,     // original with :
+			val:  args[arg], // stripped without :
+			len:  1,
 		}
+
+		switch v := args[arg].(type) {
+		default:
+			// Check if it's any kind of slice
+			rv := reflect.ValueOf(v)
+			if rv.Kind() == reflect.Slice {
+				pe.len = rv.Len()
+				position += rv.Len()
+			}
+		}
+
+		params[param] = pe
 	}
 
-	// this needs to error if the named param is not found
 	return params
 }
 
 func substitute(sql string, params map[string]paramEntry) (string, error) {
-	fields := strings.Fields(sql)
-	var found []string
 	position := 1
-
-	for i, word := range fields {
-		if strings.HasPrefix(word, ":") {
-			param := strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r) && (r == ':' || r == '(' || r == ')')
-			})
-			found = append(found, param)
-
-			if pe, exists := params[param]; exists {
-				positions := make([]string, pe.len)
-				for pi := range pe.len {
-					positions[pi] = fmt.Sprintf("$%d", position)
-					position++
-				}
-				fields[i] = strings.Join(positions, ", ")
-			} else {
-				// could error and show where in the token/field path it failed
-				return "", fmt.Errorf("parameter %s not found in args %v", colorize(param, Red), params)
+	// this is the quick way, though I would like to build a new string
+	// by iterating through the original, string, and appending to a builder, and not
+	// by replacing a string multiple times.
+	for e := range maps.Values(params) {
+		if pe, exists := params[e.name]; exists {
+			positions := make([]string, pe.len)
+			for pi := range pe.len {
+				positions[pi] = fmt.Sprintf("$%d", position)
+				position++
 			}
+			sql = strings.Replace(sql, pe.name, strings.Join(positions, ", "), -1)
+		} else {
+			// could error and show where in the token/field path it failed
+			return "", fmt.Errorf("parameter %s not found in args %v", colorize(e.name, Red), params)
 		}
 	}
 
-	if len(found) != len(params) {
-		return "", fmt.Errorf("received %d arguments and only replaced %d", len(params), len(found))
-	}
-
-	return strings.Join(fields, " "), nil
+	return sql, nil
 }
