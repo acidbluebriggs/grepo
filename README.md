@@ -88,4 +88,26 @@ func AlbumWith(id int64) (*Album, error) {
     return album, nil
 }
 
+// from Example_test.go Using named parameters
+func ArtistWithNamedParameters() {
+	// ignoring error for the example
+	artists, _ := repo().MapRowsN(
+		context.Background(),
+		"select Name, ArtistId from Artist where ArtistId in ( :ids ) order by Name",
+		map[string]any{
+			"ids": []any{1, 2, 3},
+		},
+		NameMapper,
+	)
+
+	for _, artist := range artists {
+		fmt.Printf("%s\n", artist.Name)
+	}
+	// Output:
+	// AC/DC
+	// Accept
+	// Aerosmith
+}
+
+
 ```
