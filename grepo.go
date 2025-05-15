@@ -239,14 +239,10 @@ func (repo repository[T]) MapRowsN(
 }
 
 func flattenArgs(entries map[string]paramEntry) []any {
-	// need the entries sorted by their position
-	sorted := slices.SortedFunc(maps.Values(entries), func(entry paramEntry, entry2 paramEntry) int {
-		return entry.pos - entry2.pos
-	})
-
 	var newArgs []any
-
-	for _, pe := range sorted {
+	// need the entries sorted by their position so they wind up in the correct place when
+	// executed
+	for _, pe := range slices.SortedFunc(maps.Values(entries), paramSortFunc) {
 		switch v := pe.val.(type) {
 		default:
 			// Check if it's any kind of slice
@@ -649,12 +645,16 @@ func namedParameters(s string, args map[string]any) map[string]paramEntry {
 	return params
 }
 
+func paramSortFunc(entry paramEntry, entry2 paramEntry) int {
+	return entry.pos - entry2.pos
+}
+
 func substitute(sql string, params map[string]paramEntry) (string, error) {
 	position := 1
-	// this is the quick way, though I would like to build a new string
-	// by iterating through the original, string, and appending to a builder, and not
-	// by replacing a string multiple times.
-	for e := range maps.Values(params) {
+	// Need the entries sorted by their position so they wind up in the correct place.
+	// Probably could have written a better data structure for this as the map
+	// does have is limitations.
+	for _, e := range slices.SortedFunc(maps.Values(params), paramSortFunc) {
 		if pe, exists := params[e.name]; exists {
 			positions := make([]string, pe.len)
 			for pi := range pe.len {

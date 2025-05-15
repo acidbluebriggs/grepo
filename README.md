@@ -4,6 +4,22 @@
 Yes, there a probably hundreds of these out there, but this library is currently 
 being written by me to learn the Go programming language.
 
+# Don't Use It
+
+This was/is here for me to get a feel of the Go programming language. It got me to learn about:
+
+* Go's syntax in general
+* Go's abstraction concepts (interfaces, types, iterators, reflection, assertions)
+* Go's built-in data structures
+* Patterns in Go: singleton, factory, adapter, perhaps others
+* Using a relational database using SQL within Go
+* Configuration
+* Error handling
+* Testing, Benchmarking, Examples, and temp files
+* Building and publishing
+
+### _That being said, this ended up being a nothing-burger for usability. Waste of time and effort. 
+
 ## The Demo Database
 This library is currently tested primarily around SQLite (and starting work on Postgresql), and uses the
 [chinook.sqlite](https://github.com/lerocha/chinook-database/blob/master/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite_) demo 
