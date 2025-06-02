@@ -18,8 +18,7 @@ This was/is here for me to get a feel of the Go programming language. It got me 
 * Testing, Benchmarking, Examples, and temp files
 * Building and publishing
 
-### _That being said, this ended up being a nothing-burger for usability. Waste of time and effort._
-
+### _That being said, this ended up being a nothing-burger for usability. I think.
 ## The Demo Database
 This library is currently tested primarily around SQLite (and starting work on Postgresql), and uses the
 [chinook.sqlite](https://github.com/lerocha/chinook-database/blob/master/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite_) demo 
