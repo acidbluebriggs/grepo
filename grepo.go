@@ -650,8 +650,9 @@ func paramSortFunc(entry paramEntry, entry2 paramEntry) int {
 func substitute(sql string, params map[string]paramEntry) (string, error) {
 	position := 1
 	// Need the entries sorted by their position so they wind up in the correct place.
-	// Probably could have written a better data structure for this as the map
-	// does have is limitations.
+	// Could probably have written a better data structure for this as the map
+	// does have its limitations (insertion order), but that is overkill if all we
+	// need to do is this one sort.
 	for _, e := range slices.SortedFunc(maps.Values(params), paramSortFunc) {
 		if pe, exists := params[e.name]; exists {
 			positions := make([]string, pe.len)
@@ -661,7 +662,6 @@ func substitute(sql string, params map[string]paramEntry) (string, error) {
 			}
 			sql = strings.Replace(sql, pe.name, strings.Join(positions, ", "), -1)
 		} else {
-			// could error and show where in the token/field path it failed
 			return "", fmt.Errorf("parameter %s not found in args %v", colorize(e.name, Red), params)
 		}
 	}
