@@ -131,9 +131,7 @@ func (repo repository[T]) MapRows(
 		}
 	}()
 
-	// need to handle the issue if we have slice in the args (like an IN clause arg)
-	// The point here is that were are going to expand all arguments to their positions in the
-	// the statement.
+	// Expand all arguments to their positions in the statement.
 	// Is reflection the correct thing? Type assertions were ugly, but perhaps a better way? not sure.
 	for i, arg := range args {
 		switch v := arg.(type) {
